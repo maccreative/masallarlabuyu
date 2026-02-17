@@ -12,8 +12,6 @@ const CreateStorySchema = z.object({
   age: z.number().int().min(1).max(18).optional().default(5),
   language: z.enum(["tr", "en"]).optional().default("tr"),
   lengthSec: z.number().int().min(30).max(300).optional().default(110),
-
-  // ✅ HİBRİT: İstersen ID gönder (clean), istersen isim gönder (UX)
   childProfileId: z.number().int().positive().nullable().optional(),
   childName: z.string().min(1).max(40).optional(),
 });
@@ -30,13 +28,10 @@ async function generateStory(
   const model = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
 
   const { theme, age, language, lengthSec } = input;
-
-  // 90–120 sn hedefi için kelime hesabı
   const estimatedWords = Math.floor((lengthSec / 60) * 130);
 
-  // Çocuk adı yoksa fallback
   const characterName =
-    childName || (language === "tr" ? "Minik Kahraman" : "Little Hero");
+    childName ?? (language === "tr" ? "Minik Kahraman" : "Little Hero");
 
   const prompt =
     language === "tr"
@@ -108,18 +103,13 @@ export async function POST(request: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid input",
-          details: parsed.error.flatten(),
-        },
+        { success: false, message: "Invalid input", details: parsed.error.flatten() },
         { status: 400 }
       );
     }
 
     const input = parsed.data;
 
-    // 1) User kontrol
     const user = await prisma.user.findUnique({ where: { id: input.userId } });
     if (!user) {
       return NextResponse.json(
@@ -128,11 +118,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2) Child çözümleme (Hibrit)
     let childProfileId: number | null = input.childProfileId ?? null;
     let childName: string | undefined = undefined;
 
-    // 2a) childProfileId geldiyse doğrula
     if (childProfileId) {
       const child = await prisma.childProfile.findFirst({
         where: { id: childProfileId, userId: input.userId },
@@ -141,19 +129,14 @@ export async function POST(request: NextRequest) {
 
       if (!child) {
         return NextResponse.json(
-          {
-            success: false,
-            message: "Child profile not found for this user",
-            details: { childProfileId, userId: input.userId },
-          },
+          { success: false, message: "Child profile not found" },
           { status: 400 }
         );
       }
 
-      childName = child.childName;
+      childName = child.childName ?? undefined;
     }
 
-    // 2b) childProfileId yok ama childName geldiyse: bul veya oluştur
     if (!childProfileId && input.childName) {
       const existing = await prisma.childProfile.findFirst({
         where: { userId: input.userId, childName: input.childName },
@@ -162,7 +145,7 @@ export async function POST(request: NextRequest) {
 
       if (existing) {
         childProfileId = existing.id;
-        childName = existing.childName;
+        childName = existing.childName ?? undefined;
       } else {
         const created = await prisma.childProfile.create({
           data: { userId: input.userId, childName: input.childName },
@@ -170,18 +153,17 @@ export async function POST(request: NextRequest) {
         });
 
         childProfileId = created.id;
-        childName = created.childName;
+        childName = created.childName ?? undefined;
       }
     }
 
-    // 3) Story create (FK güvenli)
     const story = await prisma.story.create({
       data: {
         storyId: "st-" + randomUUID().slice(0, 12),
         userId: input.userId,
         childProfileId,
         voiceProfileId: null,
-        title: "GENERATING...", // ✅ yeni alan
+        title: "GENERATING...",
         storyText: "GENERATING...",
         audioUrl: null,
         imageUrls: [],
@@ -190,18 +172,13 @@ export async function POST(request: NextRequest) {
 
     storyRowId = story.id;
 
-    // 4) Story generate
     const generatedText = await generateStory(input, childName);
 
-    // ✅ Title + Body ayır
     const { title, storyText } = splitTitleAndBody(generatedText);
 
     const updated = await prisma.story.update({
       where: { id: story.id },
-      data: {
-        title,
-        storyText,
-      },
+      data: { title, storyText },
     });
 
     return NextResponse.json({
@@ -212,7 +189,7 @@ export async function POST(request: NextRequest) {
         userId: updated.userId,
         childProfileId: updated.childProfileId,
         voiceProfileId: updated.voiceProfileId,
-        title: updated.title, // ✅ response’a eklendi
+        title: updated.title,
         storyText: updated.storyText,
         audioUrl: updated.audioUrl,
         imageUrls: updated.imageUrls,
@@ -230,11 +207,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      {
-        success: false,
-        message: "Story generation failed",
-        details: err?.message || "Unknown error",
-      },
+      { success: false, message: "Story generation failed", details: err?.message || "Unknown error" },
       { status: 500 }
     );
   }
