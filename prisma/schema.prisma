@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  email         String?        @unique
+  createdAt     DateTime       @default(now())
+  childProfiles ChildProfile[]
+  stories       Story[]
+  voiceProfiles VoiceProfile[]
+}
+
+model VoiceProfile {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  voiceId        String    @unique
+  parentName     String?
+  audioSampleUrl String?
+  encrypted      Boolean   @default(true)
+  consentGiven   Boolean   @default(false)
+  consentDate    DateTime?
+  autoDeleteDate DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  stories        Story[]
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ChildProfile {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  childName      String?
+  photoUrls      String[]
+  loraUrl        String?
+  age            Int?
+  consentGiven   Boolean   @default(false)
+  autoDeleteDate DateTime?
+  createdAt      DateTime  @default(now())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stories        Story[]
+}
+
+model Story {
+  id             Int           @id @default(autoincrement())
+  storyId        String        @unique
+  userId         Int
+  childProfileId Int?
+  voiceProfileId Int?
+  storyText      String
+  audioUrl       String?
+  imageUrls      String[]
+  createdAt      DateTime      @default(now())
+  title          String?
+  childProfile   ChildProfile? @relation(fields: [childProfileId], references: [id])
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voiceProfile   VoiceProfile? @relation(fields: [voiceProfileId], references: [id])
+
+  @@index([createdAt])
+}
